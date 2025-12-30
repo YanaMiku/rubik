@@ -2,10 +2,14 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>3D Rubik's Cube - Clean UI</title>
+    <!-- Import Orbitron dari Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap" rel="stylesheet">
     <style>
-        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: none; }
         
         /* --- UI ELEMENTS --- */
 
@@ -55,6 +59,27 @@
         }
         #btn-menu:hover { background: rgba(80, 80, 80, 0.8); }
 
+        /* Timer Display - Top Center */
+        #timer-display {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 30, 30, 0.9);
+            color: #0f0;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 1.4rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            border: 1px solid #0f0;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+            z-index: 90;
+            display: none;
+            pointer-events: none;
+            font-family: 'Orbitron', sans-serif;
+        }
+
         /* Settings Dropdown */
         #settings-dropdown {
             position: absolute;
@@ -65,10 +90,10 @@
             padding: 15px;
             border-radius: 8px;
             border: 1px solid #444;
-            display: none; /* Hidden by default */
+            display: none;
             z-index: 99;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            min-width: 180px;
+            min-width: 200px;
         }
         #settings-dropdown.visible { display: block; animation: fadeIn 0.2s; }
 
@@ -77,7 +102,9 @@
             align-items: center;
             justify-content: space-between;
             font-size: 0.9rem;
+            margin-bottom: 12px;
         }
+        .setting-item:last-child { margin-bottom: 0; }
         
         /* Custom Checkbox */
         .toggle-switch {
@@ -154,7 +181,7 @@
             width: 100%;
             display: flex;
             justify-content: center;
-            pointer-events: none; /* Allow click through around button */
+            pointer-events: none;
         }
         #btn-shuffle {
             pointer-events: auto;
@@ -192,12 +219,22 @@
     <button id="btn-info" onclick="toggleInfo()" title="Tutorial">i</button>
     <button id="btn-menu" onclick="toggleMenu()" title="Pengaturan">≡</button>
 
+    <!-- Timer Display -->
+    <div id="timer-display">00:00.00</div>
+
     <!-- Settings Menu (Dropdown) -->
     <div id="settings-dropdown">
         <div class="setting-item">
             <span>Keyboard Shortcuts</span>
             <label class="toggle-switch">
                 <input type="checkbox" id="chk-keyboard" checked onchange="toggleKeyboard(this)">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="setting-item">
+            <span>Timer</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="chk-timer" checked onchange="toggleTimerEnabled(this)">
                 <span class="slider"></span>
             </label>
         </div>
@@ -208,9 +245,9 @@
         <div class="modal-content">
             <span class="close-modal" onclick="toggleInfo()">×</span>
             <h2>Cara Bermain</h2>
-            <p><b>🖱️ Klik Kanan & Drag</b><br>Untuk memutar sudut pandang kamera.</p>
-            <p><b>👆 Klik Kiri & Geser (Swipe)</b><br>Klik pada kubus dan geser mouse untuk memutar sisi rubik.</p>
-            <p><b>🔍 Scroll</b><br>Untuk Zoom in/out.</p>
+            <p><b>🖱️ Klik Kanan & Drag / 2 Jari</b><br>Untuk memutar sudut pandang kamera.</p>
+            <p><b>👆 1 Jari Sentuh & Geser</b><br>Sentuh pada kubus dan geser untuk memutar sisi rubik.</p>
+            <p><b>🔍 Pinch (Cubit)</b><br>Untuk Zoom in/out.</p>
             
             <hr style="border-color: #444; opacity: 0.5; margin: 15px 0;">
             
@@ -234,14 +271,19 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
         // --- STATE UI ---
         let keyboardEnabled = true;
+        let timerEnabled = true;
+        let timerRunning = false;
+        let timerStartTime = 0;
+        let timerInterval = null;
+        let hasShuffled = false;
 
         window.toggleInfo = () => {
             const el = document.getElementById('info-modal');
             el.classList.toggle('visible');
-            // Tutup menu jika terbuka
             document.getElementById('settings-dropdown').classList.remove('visible');
         };
 
@@ -254,13 +296,56 @@
             keyboardEnabled = checkbox.checked;
         };
 
+        window.toggleTimerEnabled = (checkbox) => {
+            timerEnabled = checkbox.checked;
+            const timerEl = document.getElementById('timer-display');
+            if (!timerEnabled) {
+                timerEl.style.display = 'none';
+                stopTimer();
+            } else if (timerRunning && hasShuffled) {
+                timerEl.style.display = 'block';
+            }
+        };
+
+        // --- TIMER FUNCTIONS ---
+        function startTimer() {
+            if (!timerEnabled || !hasShuffled || timerRunning) return;
+            timerRunning = true;
+            timerStartTime = performance.now();
+            const timerEl = document.getElementById('timer-display');
+            timerEl.style.display = 'block';
+
+            timerInterval = setInterval(() => {
+                const elapsed = performance.now() - timerStartTime;
+                const minutes = Math.floor(elapsed / 60000).toString().padStart(2, '0');
+                const seconds = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
+                const centiseconds = Math.floor((elapsed % 1000) / 10).toString().padStart(2, '0');
+                timerEl.textContent = `${minutes}:${seconds}.${centiseconds}`;
+            }, 10);
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            timerRunning = false;
+        }
+
+        function resetTimer() {
+            stopTimer();
+            document.getElementById('timer-display').textContent = '00:00.00';
+            document.getElementById('timer-display').style.display = 'none';
+            hasShuffled = false;
+        }
+
         // --- KONFIGURASI 3D ---
         let scene, camera, renderer, controls;
         const allCubies = []; 
         let isAnimating = false; 
         let pivotObj; 
+        let autoRotateActive = false;
 
-        // Raycaster & Swipe Vars
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         let startPoint = null; 
@@ -268,13 +353,13 @@
         let startNormal = null; 
 
         const COLORS = {
-            base: 0x222222, 
-            R: 0xb90000,    
-            L: 0xff5900,    
-            U: 0xffffff,    
-            D: 0xffd500,    
-            F: 0x009b48,    
-            B: 0x0045ad     
+            base: 0x111111,
+            R: 0xd32f2f,
+            L: 0xffa500,
+            U: 0xffffff,
+            D: 0xffeb3b,
+            F: 0x388e3c,
+            B: 0x1976d2
         };
 
         init();
@@ -291,30 +376,36 @@
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.outputEncoding = THREE.sRGBEncoding;
             document.body.appendChild(renderer.domElement);
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            // Pencahayaan
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            dirLight.position.set(10, 20, 10);
-            scene.add(dirLight);
-            
-            const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            backLight.position.set(-10, -10, -10);
-            scene.add(backLight);
+            const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            keyLight.position.set(10, 15, 10);
+            scene.add(keyLight);
+
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            fillLight.position.set(-10, 10, -10);
+            scene.add(fillLight);
+
+            const rimLight = new THREE.DirectionalLight(0x8888ff, 0.4);
+            rimLight.position.set(0, -10, 15);
+            scene.add(rimLight);
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.enablePan = false; 
-            
-            // Mouse Controls: Right for Camera, Left for Swipe
-            controls.mouseButtons = {
-                LEFT: null, 
-                MIDDLE: THREE.MOUSE.DOLLY,
-                RIGHT: THREE.MOUSE.ROTATE
-            };
+            controls.autoRotate = false;
+            controls.enableZoom = true; // Untuk pinch zoom
+
+            // OrbitControls sudah support touch secara default:
+            // 1 finger drag = rotate camera
+            // 2 fingers pinch = zoom
+            // 2 fingers drag = pan (disabled)
 
             createRubiksCube();
 
@@ -323,27 +414,43 @@
 
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', onKeyDown);
-            
-            renderer.domElement.addEventListener('mousedown', onMouseDown);
-            renderer.domElement.addEventListener('mouseup', onMouseUp);
+
+            // Unified event handlers untuk mouse & touch (single finger untuk rotate layer)
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
+            renderer.domElement.addEventListener('pointerup', onPointerUp);
             renderer.domElement.addEventListener('contextmenu', event => event.preventDefault()); 
         }
 
         function createRubiksCube() {
-            const geometry = new THREE.BoxGeometry(0.95, 0.95, 0.95);
+            const cubieSize = 0.9;
+            const gap = 0.1;
+            const radius = 0.08;
+            const segments = 8;
+
             for (let x = -1; x <= 1; x++) {
                 for (let y = -1; y <= 1; y++) {
                     for (let z = -1; z <= 1; z++) {
+                        const geometry = new RoundedBoxGeometry(cubieSize, cubieSize, cubieSize, segments, radius);
+
                         const materials = [
-                            new THREE.MeshPhongMaterial({ color: x === 1 ? COLORS.R : COLORS.base }),
-                            new THREE.MeshPhongMaterial({ color: x === -1 ? COLORS.L : COLORS.base }),
-                            new THREE.MeshPhongMaterial({ color: y === 1 ? COLORS.U : COLORS.base }),
-                            new THREE.MeshPhongMaterial({ color: y === -1 ? COLORS.D : COLORS.base }),
-                            new THREE.MeshPhongMaterial({ color: z === 1 ? COLORS.F : COLORS.base }),
-                            new THREE.MeshPhongMaterial({ color: z === -1 ? COLORS.B : COLORS.base }),
+                            new THREE.MeshStandardMaterial({ color: x === 1 ? COLORS.R : COLORS.base, roughness: 0.3, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ color: x === -1 ? COLORS.L : COLORS.base, roughness: 0.3, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ color: y === 1 ? COLORS.U : COLORS.base, roughness: 0.3, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ color: y === -1 ? COLORS.D : COLORS.base, roughness: 0.3, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ color: z === 1 ? COLORS.F : COLORS.base, roughness: 0.3, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ color: z === -1 ? COLORS.B : COLORS.base, roughness: 0.3, metalness: 0.1 })
                         ];
+
                         const mesh = new THREE.Mesh(geometry, materials);
-                        mesh.position.set(x, y, z);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+
+                        mesh.position.set(
+                            x * (cubieSize + gap),
+                            y * (cubieSize + gap),
+                            z * (cubieSize + gap)
+                        );
+
                         mesh.userData = { isCubie: true };
                         scene.add(mesh);
                         allCubies.push(mesh);
@@ -352,7 +459,84 @@
             }
         }
 
-        // --- SWIPE LOGIC ---
+        // --- CEK APAKAH RUBIK SUDAH SELESAI ---
+        function isCubeSolved() {
+            const faces = [
+                { axis: 'x', coord: 1, color: COLORS.R },
+                { axis: 'x', coord: -1, color: COLORS.L },
+                { axis: 'y', coord: 1, color: COLORS.U },
+                { axis: 'y', coord: -1, color: COLORS.D },
+                { axis: 'z', coord: 1, color: COLORS.F },
+                { axis: 'z', coord: -1, color: COLORS.B }
+            ];
+
+            const step = 0.9 + 0.1;
+            for (const face of faces) {
+                const matchingCubies = allCubies.filter(cubie => {
+                    const pos = new THREE.Vector3();
+                    cubie.getWorldPosition(pos);
+                    return Math.abs(pos[face.axis] - face.coord * step) < 0.2;
+                });
+
+                for (const cubie of matchingCubies) {
+                    const matIndex = face.axis === 'x' ? (face.coord > 0 ? 0 : 1) :
+                                    face.axis === 'y' ? (face.coord > 0 ? 2 : 3) :
+                                    (face.coord > 0 ? 4 : 5);
+                    if (cubie.material[matIndex].color.getHex() !== face.color) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // --- TOUCH & MOUSE LOGIC UNTUK ROTATE LAYER (1 finger / left click) ---
+        function onPointerDown(event) {
+            if (isAnimating) return;
+
+            // Jika ada lebih dari 1 pointer (multi-touch), biarkan OrbitControls handle (rotate/zoom)
+            if (event.pointerType === 'touch' && renderer.domElement.pointers && renderer.domElement.pointers.length > 1) return;
+
+            document.getElementById('settings-dropdown').classList.remove('visible');
+
+            const intersects = getIntersects(event, allCubies);
+            if (intersects.length > 0) {
+                controls.enabled = false; // Disable camera rotate saat swipe layer
+                startCubie = intersects[0].object;
+                startPoint = intersects[0].point;
+                startNormal = intersects[0].face.normal.clone();
+                startNormal.transformDirection(startCubie.matrixWorld).round();
+            }
+        }
+
+        function onPointerUp(event) {
+            controls.enabled = true;
+
+            if (!startPoint || !startCubie || isAnimating) {
+                startPoint = null; startCubie = null; return;
+            }
+
+            const intersects = getIntersects(event, allCubies);
+            if (intersects.length === 0) {
+                startPoint = null; startCubie = null; return;
+            }
+
+            const endPoint = intersects[0].point; // Gunakan intersect akhir untuk plane projection sederhana
+
+            const moveVector = new THREE.Vector3().subVectors(endPoint, startPoint);
+            if (moveVector.length() < 0.3) {
+                startPoint = null; startCubie = null; return;
+            }
+
+            const direction = getDominantAxis(moveVector, startNormal);
+            if (direction) {
+                handleSwipeMove(startCubie, startNormal, direction, moveVector);
+                startTimer();
+            }
+
+            startPoint = null; startCubie = null; startNormal = null;
+        }
+
         function getIntersects(event, objects) {
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -361,53 +545,7 @@
             return raycaster.intersectObjects(objects);
         }
 
-        function onMouseDown(event) {
-            if (event.button !== 0 || isAnimating) return; // Only left click
-
-            // Tutup menu/modal jika klik di area canvas
-            document.getElementById('settings-dropdown').classList.remove('visible');
-
-            const intersects = getIntersects(event, allCubies);
-            if (intersects.length > 0) {
-                controls.enabled = false;
-                startCubie = intersects[0].object;
-                startPoint = intersects[0].point;
-                startNormal = intersects[0].face.normal.clone();
-                startNormal.transformDirection(startCubie.matrixWorld).round();
-            }
-        }
-
-        function onMouseUp(event) {
-            controls.enabled = true;
-
-            if (!startPoint || !startCubie || isAnimating) {
-                startPoint = null; startCubie = null; return;
-            }
-
-            const rect = renderer.domElement.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(mouse, camera);
-
-            const plane = new THREE.Plane();
-            plane.setFromNormalAndCoplanarPoint(startNormal, startPoint);
-            
-            const endPoint = new THREE.Vector3();
-            raycaster.ray.intersectPlane(plane, endPoint);
-
-            if (endPoint) {
-                const moveVector = new THREE.Vector3().subVectors(endPoint, startPoint);
-                if (moveVector.length() < 0.3) { // Threshold
-                    startPoint = null; return;
-                }
-
-                const direction = getDominantAxis(moveVector, startNormal);
-                if (direction) {
-                    handleSwipeMove(startCubie, startNormal, direction, moveVector);
-                }
-            }
-            startPoint = null; startCubie = null; startNormal = null;
-        }
+        // ... (getDominantAxis, handleSwipeMove, rotateMove, shuffleCube, onKeyDown, onWindowResize, animate tetap sama seperti versi sebelumnya)
 
         function getDominantAxis(vector, normal) {
             let axes = ['x', 'y', 'z'];
@@ -434,7 +572,8 @@
 
             const worldPos = new THREE.Vector3();
             cubie.getWorldPosition(worldPos);
-            const sliceCoordinate = Math.round(worldPos[rotAxis]);
+            const step = 0.9 + 0.1;
+            const sliceCoordinate = Math.round(worldPos[rotAxis] / step);
 
             const moveSign = Math.sign(moveVector[moveAxis]);
             const realMove = new THREE.Vector3();
@@ -443,19 +582,26 @@
             const cross = new THREE.Vector3().crossVectors(normal, realMove);
             const direction = Math.sign(cross[rotAxis]); 
 
-            rotateMove(rotAxis, sliceCoordinate, direction);
+            rotateMove(rotAxis, sliceCoordinate, direction).then(() => {
+                if (isCubeSolved()) {
+                    stopTimer();
+                    if (timerEnabled) {
+                        alert('Selamat! Rubik selesai dalam waktu: ' + document.getElementById('timer-display').textContent);
+                    }
+                }
+            });
         }
 
-        // --- CORE ROTATION ---
         function rotateMove(axis, coordinate, direction, speed = 300) {
             if (isAnimating) return Promise.reject("Busy");
             isAnimating = true;
 
             const activeCubies = [];
+            const step = 0.9 + 0.1;
             allCubies.forEach(cubie => {
                 const worldPos = new THREE.Vector3();
                 cubie.getWorldPosition(worldPos);
-                if (Math.abs(worldPos[axis] - coordinate) < 0.1) {
+                if (Math.abs(Math.round(worldPos[axis] / step) - coordinate) < 0.5) {
                     activeCubies.push(cubie);
                 }
             });
@@ -486,9 +632,9 @@
                         pivotObj.updateMatrixWorld();
                         activeCubies.forEach(cubie => {
                             scene.attach(cubie);
-                            cubie.position.x = Math.round(cubie.position.x);
-                            cubie.position.y = Math.round(cubie.position.y);
-                            cubie.position.z = Math.round(cubie.position.z);
+                            cubie.position.x = Math.round(cubie.position.x / step) * step;
+                            cubie.position.y = Math.round(cubie.position.y / step) * step;
+                            cubie.position.z = Math.round(cubie.position.z / step) * step;
                             cubie.updateMatrixWorld();
                         });
                         pivotObj.rotation.set(0, 0, 0);
@@ -500,7 +646,6 @@
             });
         }
 
-        // --- KEYBOARD & SHUFFLE ---
         const MOVES = {
             'R': ['x', 1, -1],  'r': ['x', 1, 1],
             'L': ['x', -1, 1],  'l': ['x', -1, -1],
@@ -512,16 +657,25 @@
 
         window.shuffleCube = async () => {
             if (isAnimating) return;
+
+            resetTimer();
+            hasShuffled = true;
+            autoRotateActive = true;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 3.0;
+
             const keys = Object.keys(MOVES).filter(k => k === k.toUpperCase());
             for (let i = 0; i < 20; i++) {
                 const randomKey = keys[Math.floor(Math.random() * keys.length)];
                 const move = MOVES[randomKey];
-                await rotateMove(move[0], move[1], move[2], 60);
+                await rotateMove(move[0], move[1], move[2], 350);
             }
+
+            autoRotateActive = false;
+            controls.autoRotate = false;
         };
 
         function onKeyDown(event) {
-            // Cek apakah keyboard enabled dan tidak sedang animasi
             if (isAnimating || !keyboardEnabled) return;
 
             let key = event.key.toUpperCase();
@@ -533,7 +687,17 @@
                  if (event.shiftKey) moveDef[2] *= -1;
             }
 
-            if (moveDef) rotateMove(moveDef[0], moveDef[1], moveDef[2]);
+            if (moveDef) {
+                rotateMove(moveDef[0], moveDef[1], moveDef[2]).then(() => {
+                    startTimer();
+                    if (isCubeSolved()) {
+                        stopTimer();
+                        if (timerEnabled) {
+                            alert('Selamat! Rubik selesai dalam waktu: ' + document.getElementById('timer-display').textContent);
+                        }
+                    }
+                });
+            }
         }
 
         function onWindowResize() {
