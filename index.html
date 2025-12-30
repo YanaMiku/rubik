@@ -345,6 +345,7 @@
         let isAnimating = false; 
         let pivotObj; 
         let autoRotateActive = false;
+        let particles; // Untuk particle background
 
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
@@ -367,9 +368,9 @@
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x222222);
+            scene.background = new THREE.Color(0x000000); // Background hitam untuk stars
 
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
             camera.position.set(6, 5, 8);
             camera.lookAt(0, 0, 0);
 
@@ -400,12 +401,10 @@
             controls.dampingFactor = 0.05;
             controls.enablePan = false; 
             controls.autoRotate = false;
-            controls.enableZoom = true; // Untuk pinch zoom
+            controls.enableZoom = true;
 
-            // OrbitControls sudah support touch secara default:
-            // 1 finger drag = rotate camera
-            // 2 fingers pinch = zoom
-            // 2 fingers drag = pan (disabled)
+            // Tambahkan Particle Background (Starfield keren)
+            createParticleBackground();
 
             createRubiksCube();
 
@@ -415,10 +414,54 @@
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', onKeyDown);
 
-            // Unified event handlers untuk mouse & touch (single finger untuk rotate layer)
             renderer.domElement.addEventListener('pointerdown', onPointerDown);
             renderer.domElement.addEventListener('pointerup', onPointerUp);
             renderer.domElement.addEventListener('contextmenu', event => event.preventDefault()); 
+        }
+
+        function createParticleBackground() {
+            const particleCount = 5000;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const sizes = new Float32Array(particleCount);
+
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                // Posisi acak di sphere besar
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const radius = 500 + Math.random() * 500; // Jauh di belakang
+
+                positions[i]     = radius * Math.sin(phi) * Math.cos(theta);
+                positions[i + 1] = radius * Math.sin(phi) * Math.sin(theta);
+                positions[i + 2] = radius * Math.cos(phi);
+
+                // Warna putih dengan sedikit variasi
+                const colorIntensity = 0.7 + Math.random() * 0.3;
+                colors[i]     = colorIntensity;
+                colors[i + 1] = colorIntensity;
+                colors[i + 2] = colorIntensity + 0.1;
+
+                // Ukuran acak
+                sizes[i / 3] = Math.random() * 3 + 1;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            const material = new THREE.PointsMaterial({
+                size: 2,
+                sizeAttenuation: true,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                opacity: 0.8,
+                depthWrite: false // Agar tidak mengganggu depth kubus
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
         }
 
         function createRubiksCube() {
@@ -490,18 +533,17 @@
             return true;
         }
 
-        // --- TOUCH & MOUSE LOGIC UNTUK ROTATE LAYER (1 finger / left click) ---
+        // --- TOUCH & MOUSE LOGIC ---
         function onPointerDown(event) {
             if (isAnimating) return;
 
-            // Jika ada lebih dari 1 pointer (multi-touch), biarkan OrbitControls handle (rotate/zoom)
-            if (event.pointerType === 'touch' && renderer.domElement.pointers && renderer.domElement.pointers.length > 1) return;
+            if (event.pointerType === 'touch' && renderer.domElement._pointers && renderer.domElement._pointers.length > 1) return;
 
             document.getElementById('settings-dropdown').classList.remove('visible');
 
             const intersects = getIntersects(event, allCubies);
             if (intersects.length > 0) {
-                controls.enabled = false; // Disable camera rotate saat swipe layer
+                controls.enabled = false;
                 startCubie = intersects[0].object;
                 startPoint = intersects[0].point;
                 startNormal = intersects[0].face.normal.clone();
@@ -521,7 +563,7 @@
                 startPoint = null; startCubie = null; return;
             }
 
-            const endPoint = intersects[0].point; // Gunakan intersect akhir untuk plane projection sederhana
+            const endPoint = intersects[0].point;
 
             const moveVector = new THREE.Vector3().subVectors(endPoint, startPoint);
             if (moveVector.length() < 0.3) {
@@ -544,8 +586,6 @@
             raycaster.setFromCamera(mouse, camera);
             return raycaster.intersectObjects(objects);
         }
-
-        // ... (getDominantAxis, handleSwipeMove, rotateMove, shuffleCube, onKeyDown, onWindowResize, animate tetap sama seperti versi sebelumnya)
 
         function getDominantAxis(vector, normal) {
             let axes = ['x', 'y', 'z'];
@@ -708,6 +748,13 @@
 
         function animate() {
             requestAnimationFrame(animate);
+
+            // Animasi particle background (perlahan berputar)
+            if (particles) {
+                particles.rotation.y += 0.0001;
+                particles.rotation.x += 0.00005;
+            }
+
             controls.update();
             renderer.render(scene, camera);
         }
