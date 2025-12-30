@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Rubik's Cube - Clean UI</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* --- UI ELEMENTS --- */
+
+        /* Top Left - Info Button */
+        #btn-info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 40px;
+            height: 40px;
+            background: rgba(50, 50, 50, 0.6);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            font-family: 'Times New Roman', serif;
+            font-style: italic;
+            font-weight: bold;
+            font-size: 1.2rem;
+            cursor: pointer;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        #btn-info:hover { background: rgba(80, 80, 80, 0.8); }
+
+        /* Top Right - Menu Button */
+        #btn-menu {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background: rgba(50, 50, 50, 0.6);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            line-height: 0;
+        }
+        #btn-menu:hover { background: rgba(80, 80, 80, 0.8); }
+
+        /* Settings Dropdown */
+        #settings-dropdown {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            background: rgba(30, 30, 30, 0.95);
+            color: #eee;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            display: none; /* Hidden by default */
+            z-index: 99;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            min-width: 180px;
+        }
+        #settings-dropdown.visible { display: block; animation: fadeIn 0.2s; }
+
+        .setting-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.9rem;
+        }
+        
+        /* Custom Checkbox */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #555;
+            transition: .4s;
+            border-radius: 20px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #2196F3; }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        /* Info Modal (Overlay) */
+        #info-modal {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        #info-modal.visible { opacity: 1; pointer-events: auto; }
+
+        .modal-content {
+            background: #222;
+            color: #eee;
+            padding: 25px;
+            border-radius: 12px;
+            max-width: 350px;
+            width: 80%;
+            border: 1px solid #444;
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .modal-content h2 { margin-top: 0; color: #fff; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .modal-content p { font-size: 0.9rem; line-height: 1.5; color: #ccc; }
+        .key { color: #4ff; font-weight: bold; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; }
+        .close-modal {
+            position: absolute;
+            top: 15px; right: 20px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #aaa;
+        }
+        .close-modal:hover { color: #fff; }
+
+        /* Bottom Shuffle Button */
+        #bottom-controls {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            pointer-events: none; /* Allow click through around button */
+        }
+        #btn-shuffle {
+            pointer-events: auto;
+            background: rgba(211, 47, 47, 0.85);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+        #btn-shuffle:hover { background: #f44336; transform: translateY(-2px); }
+        #btn-shuffle:active { transform: translateY(0); }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+
+    <!-- Import Map untuk Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Header Buttons -->
+    <button id="btn-info" onclick="toggleInfo()" title="Tutorial">i</button>
+    <button id="btn-menu" onclick="toggleMenu()" title="Pengaturan">≡</button>
+
+    <!-- Settings Menu (Dropdown) -->
+    <div id="settings-dropdown">
+        <div class="setting-item">
+            <span>Keyboard Shortcuts</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="chk-keyboard" checked onchange="toggleKeyboard(this)">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="info-modal" onclick="if(event.target === this) toggleInfo()">
+        <div class="modal-content">
+            <span class="close-modal" onclick="toggleInfo()">×</span>
+            <h2>Cara Bermain</h2>
+            <p><b>🖱️ Klik Kanan & Drag</b><br>Untuk memutar sudut pandang kamera.</p>
+            <p><b>👆 Klik Kiri & Geser (Swipe)</b><br>Klik pada kubus dan geser mouse untuk memutar sisi rubik.</p>
+            <p><b>🔍 Scroll</b><br>Untuk Zoom in/out.</p>
+            
+            <hr style="border-color: #444; opacity: 0.5; margin: 15px 0;">
+            
+            <h3>Keyboard Shortcuts</h3>
+            <p>Aktifkan di menu pojok kanan atas.</p>
+            <p>
+                <span class="key">U</span> Up &nbsp; <span class="key">D</span> Down<br>
+                <span class="key">L</span> Left &nbsp; <span class="key">R</span> Right<br>
+                <span class="key">F</span> Front &nbsp; <span class="key">B</span> Back
+            </p>
+            <p style="font-size: 0.8rem; color: #888;">*Tahan Shift untuk putar balik arah</p>
+        </div>
+    </div>
+
+    <!-- Bottom Controls -->
+    <div id="bottom-controls">
+        <button id="btn-shuffle" onclick="window.shuffleCube()">SHUFFLE</button>
+    </div>
+
+    <!-- Main Script -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- STATE UI ---
+        let keyboardEnabled = true;
+
+        window.toggleInfo = () => {
+            const el = document.getElementById('info-modal');
+            el.classList.toggle('visible');
+            // Tutup menu jika terbuka
+            document.getElementById('settings-dropdown').classList.remove('visible');
+        };
+
+        window.toggleMenu = () => {
+            const el = document.getElementById('settings-dropdown');
+            el.classList.toggle('visible');
+        };
+
+        window.toggleKeyboard = (checkbox) => {
+            keyboardEnabled = checkbox.checked;
+        };
+
+        // --- KONFIGURASI 3D ---
+        let scene, camera, renderer, controls;
+        const allCubies = []; 
+        let isAnimating = false; 
+        let pivotObj; 
+
+        // Raycaster & Swipe Vars
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let startPoint = null; 
+        let startCubie = null; 
+        let startNormal = null; 
+
+        const COLORS = {
+            base: 0x222222, 
+            R: 0xb90000,    
+            L: 0xff5900,    
+            U: 0xffffff,    
+            D: 0xffd500,    
+            F: 0x009b48,    
+            B: 0x0045ad     
+        };
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(6, 5, 8);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+            
+            const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            backLight.position.set(-10, -10, -10);
+            scene.add(backLight);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enablePan = false; 
+            
+            // Mouse Controls: Right for Camera, Left for Swipe
+            controls.mouseButtons = {
+                LEFT: null, 
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: THREE.MOUSE.ROTATE
+            };
+
+            createRubiksCube();
+
+            pivotObj = new THREE.Object3D();
+            scene.add(pivotObj);
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', onKeyDown);
+            
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('contextmenu', event => event.preventDefault()); 
+        }
+
+        function createRubiksCube() {
+            const geometry = new THREE.BoxGeometry(0.95, 0.95, 0.95);
+            for (let x = -1; x <= 1; x++) {
+                for (let y = -1; y <= 1; y++) {
+                    for (let z = -1; z <= 1; z++) {
+                        const materials = [
+                            new THREE.MeshPhongMaterial({ color: x === 1 ? COLORS.R : COLORS.base }),
+                            new THREE.MeshPhongMaterial({ color: x === -1 ? COLORS.L : COLORS.base }),
+                            new THREE.MeshPhongMaterial({ color: y === 1 ? COLORS.U : COLORS.base }),
+                            new THREE.MeshPhongMaterial({ color: y === -1 ? COLORS.D : COLORS.base }),
+                            new THREE.MeshPhongMaterial({ color: z === 1 ? COLORS.F : COLORS.base }),
+                            new THREE.MeshPhongMaterial({ color: z === -1 ? COLORS.B : COLORS.base }),
+                        ];
+                        const mesh = new THREE.Mesh(geometry, materials);
+                        mesh.position.set(x, y, z);
+                        mesh.userData = { isCubie: true };
+                        scene.add(mesh);
+                        allCubies.push(mesh);
+                    }
+                }
+            }
+        }
+
+        // --- SWIPE LOGIC ---
+        function getIntersects(event, objects) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            return raycaster.intersectObjects(objects);
+        }
+
+        function onMouseDown(event) {
+            if (event.button !== 0 || isAnimating) return; // Only left click
+
+            // Tutup menu/modal jika klik di area canvas
+            document.getElementById('settings-dropdown').classList.remove('visible');
+
+            const intersects = getIntersects(event, allCubies);
+            if (intersects.length > 0) {
+                controls.enabled = false;
+                startCubie = intersects[0].object;
+                startPoint = intersects[0].point;
+                startNormal = intersects[0].face.normal.clone();
+                startNormal.transformDirection(startCubie.matrixWorld).round();
+            }
+        }
+
+        function onMouseUp(event) {
+            controls.enabled = true;
+
+            if (!startPoint || !startCubie || isAnimating) {
+                startPoint = null; startCubie = null; return;
+            }
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            const plane = new THREE.Plane();
+            plane.setFromNormalAndCoplanarPoint(startNormal, startPoint);
+            
+            const endPoint = new THREE.Vector3();
+            raycaster.ray.intersectPlane(plane, endPoint);
+
+            if (endPoint) {
+                const moveVector = new THREE.Vector3().subVectors(endPoint, startPoint);
+                if (moveVector.length() < 0.3) { // Threshold
+                    startPoint = null; return;
+                }
+
+                const direction = getDominantAxis(moveVector, startNormal);
+                if (direction) {
+                    handleSwipeMove(startCubie, startNormal, direction, moveVector);
+                }
+            }
+            startPoint = null; startCubie = null; startNormal = null;
+        }
+
+        function getDominantAxis(vector, normal) {
+            let axes = ['x', 'y', 'z'];
+            if (Math.abs(normal.x) > 0.5) axes = axes.filter(a => a !== 'x');
+            if (Math.abs(normal.y) > 0.5) axes = axes.filter(a => a !== 'y');
+            if (Math.abs(normal.z) > 0.5) axes = axes.filter(a => a !== 'z');
+            const val0 = Math.abs(vector[axes[0]]);
+            const val1 = Math.abs(vector[axes[1]]);
+            return val0 > val1 ? axes[0] : axes[1];
+        }
+
+        function handleSwipeMove(cubie, normal, moveAxis, moveVector) {
+            const moveDirVector = new THREE.Vector3();
+            moveDirVector[moveAxis] = 1;
+            
+            const rotationAxisVector = new THREE.Vector3().crossVectors(normal, moveDirVector).normalize();
+            
+            let rotAxis = '';
+            if (Math.abs(rotationAxisVector.x) > 0.9) rotAxis = 'x';
+            if (Math.abs(rotationAxisVector.y) > 0.9) rotAxis = 'y';
+            if (Math.abs(rotationAxisVector.z) > 0.9) rotAxis = 'z';
+
+            if (!rotAxis) return; 
+
+            const worldPos = new THREE.Vector3();
+            cubie.getWorldPosition(worldPos);
+            const sliceCoordinate = Math.round(worldPos[rotAxis]);
+
+            const moveSign = Math.sign(moveVector[moveAxis]);
+            const realMove = new THREE.Vector3();
+            realMove[moveAxis] = moveSign;
+            
+            const cross = new THREE.Vector3().crossVectors(normal, realMove);
+            const direction = Math.sign(cross[rotAxis]); 
+
+            rotateMove(rotAxis, sliceCoordinate, direction);
+        }
+
+        // --- CORE ROTATION ---
+        function rotateMove(axis, coordinate, direction, speed = 300) {
+            if (isAnimating) return Promise.reject("Busy");
+            isAnimating = true;
+
+            const activeCubies = [];
+            allCubies.forEach(cubie => {
+                const worldPos = new THREE.Vector3();
+                cubie.getWorldPosition(worldPos);
+                if (Math.abs(worldPos[axis] - coordinate) < 0.1) {
+                    activeCubies.push(cubie);
+                }
+            });
+
+            pivotObj.rotation.set(0, 0, 0);
+            pivotObj.updateMatrixWorld();
+
+            activeCubies.forEach(cubie => {
+                pivotObj.attach(cubie);
+            });
+
+            return new Promise((resolve) => {
+                const end = { val: Math.PI / 2 * direction }; 
+                const startTime = Date.now();
+                
+                function animateRotation() {
+                    const now = Date.now();
+                    const elapsed = now - startTime;
+                    const progress = Math.min(elapsed / speed, 1);
+                    const ease = progress * (2 - progress); 
+
+                    pivotObj.rotation[axis] = end.val * ease;
+
+                    if (progress < 1) {
+                        requestAnimationFrame(animateRotation);
+                    } else {
+                        pivotObj.rotation[axis] = end.val;
+                        pivotObj.updateMatrixWorld();
+                        activeCubies.forEach(cubie => {
+                            scene.attach(cubie);
+                            cubie.position.x = Math.round(cubie.position.x);
+                            cubie.position.y = Math.round(cubie.position.y);
+                            cubie.position.z = Math.round(cubie.position.z);
+                            cubie.updateMatrixWorld();
+                        });
+                        pivotObj.rotation.set(0, 0, 0);
+                        isAnimating = false;
+                        resolve();
+                    }
+                }
+                animateRotation();
+            });
+        }
+
+        // --- KEYBOARD & SHUFFLE ---
+        const MOVES = {
+            'R': ['x', 1, -1],  'r': ['x', 1, 1],
+            'L': ['x', -1, 1],  'l': ['x', -1, -1],
+            'U': ['y', 1, -1],  'u': ['y', 1, 1],
+            'D': ['y', -1, 1],  'd': ['y', -1, -1],
+            'F': ['z', 1, -1],  'f': ['z', 1, 1],
+            'B': ['z', -1, 1],  'b': ['z', -1, -1]
+        };
+
+        window.shuffleCube = async () => {
+            if (isAnimating) return;
+            const keys = Object.keys(MOVES).filter(k => k === k.toUpperCase());
+            for (let i = 0; i < 20; i++) {
+                const randomKey = keys[Math.floor(Math.random() * keys.length)];
+                const move = MOVES[randomKey];
+                await rotateMove(move[0], move[1], move[2], 60);
+            }
+        };
+
+        function onKeyDown(event) {
+            // Cek apakah keyboard enabled dan tidak sedang animasi
+            if (isAnimating || !keyboardEnabled) return;
+
+            let key = event.key.toUpperCase();
+            if (event.shiftKey) key = key.toLowerCase(); 
+            let moveDef = MOVES[event.key] || MOVES[key]; 
+            
+            if (!moveDef && MOVES[event.key.toUpperCase()]) {
+                 moveDef = [...MOVES[event.key.toUpperCase()]];
+                 if (event.shiftKey) moveDef[2] *= -1;
+            }
+
+            if (moveDef) rotateMove(moveDef[0], moveDef[1], moveDef[2]);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
